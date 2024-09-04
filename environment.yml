@@ -1,0 +1,7 @@
+name: projet_court
+channels:
+    - conda-forge
+    - bioconda
+    - nodefaults
+dependencies:
+    - python
