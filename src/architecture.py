@@ -134,13 +134,18 @@ class LowLevelMatrix(DynamicMatrix):
     def get_score(self, i, j):
         dist = self.distance[self.frozen["pos_id"], j]
         closest_dist = self.round_distance(dist)
-        score = self.dope.loc[(self.dope['res1'] == self.aa_codes[self.frozen['seq_res']]) & (self.dope['res2'] == self.aa_codes[self.sequence[i]]), closest_dist]
+
+        score = self.dope.loc[(self.dope['res1'] == self.aa_codes[self.frozen['seq_res']]) & 
+                              (self.dope['res2'] == self.aa_codes[self.sequence[i]]), 
+                              closest_dist]
         
         return float(score.values[0])
     
     def fill_matrix(self):
         # Partie supérieure gauche
-        self.initialize_matrix(0, [0, 0], [self.frozen['seq_id'] - 1, self.frozen['pos_id'] - 1], self.get_score)
+        self.initialize_matrix(self.get_score(0, 0), [0, 0], 
+                               [self.frozen['seq_id'] - 1, self.frozen['pos_id'] - 1],
+                               self.get_score)
 
         for i in range(1, self.frozen['seq_id']):
             for j in range(1, self.frozen['pos_id']):
@@ -160,19 +165,24 @@ class LowLevelMatrix(DynamicMatrix):
 
         # Partie inférieure droite (si elle existe)
         if (self.frozen['seq_id'] != self.lines - 1) and (self.frozen['pos_id'] != self.columns - 1):
-            self.initialize_matrix(self.matrix[self.frozen['seq_id'], self.frozen['pos_id']],
+            self.initialize_matrix(self.matrix[self.frozen['seq_id'], self.frozen['pos_id']] +
+                                   self.get_score(self.frozen['seq_id'] + 1, self.frozen['pos_id'] + 1),
                                    [self.frozen['seq_id'] + 1, self.frozen['pos_id'] + 1],
                                    [self.lines - 1, self.columns - 1], self.get_score
                                   )
-    
-            for i in range(self.frozen['seq_id'] + 2, self.lines):
-                for j in range(self.frozen['pos_id'] + 2, self.columns):
-                    score = self.get_score(i, j)
-                    self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
-                                                    self.matrix[i - 1, j] + self.gap,
-                                                    self.matrix[i, j - 1] + self.gap
-                                                   )
-            max_score = self.matrix[i, j]
+
+            if (self.frozen['seq_id'] != self.lines - 2) and (self.frozen['pos_id'] != self.columns - 2):
+                for i in range(self.frozen['seq_id'] + 2, self.lines):
+                    for j in range(self.frozen['pos_id'] + 2, self.columns):
+                        score = self.get_score(i, j)
+                        self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
+                                                        self.matrix[i - 1, j] + self.gap,
+                                                        self.matrix[i, j - 1] + self.gap
+                                                       )
+                        max_score = self.matrix[i, j]
+            else :
+                max_score = self.matrix[self.lines - 1, self.columns - 1]
+
         else :
             max_score = self.matrix[self.frozen['seq_id'], self.frozen['pos_id']]
         
