@@ -16,7 +16,7 @@ class CarboneAlpha:
 
 class Template:
     """Classe pour représenter le template utilisé."""
-    
+
     def __init__(self, file):
         self.structure = self.build_template_from_pdb(file)
         self.length = len(self.structure)
@@ -65,6 +65,15 @@ def clean_DOPE_data(filename):
     dope_score = dope_score.drop(['temp1', 'temp2'], axis=1)
     
     return dope_score
+
+def get_fasta_sequence(filename):
+    sequence = ""
+    with open(filename, "r") as fasta:
+        for ligne in fasta:
+            if ligne.startswith(">"):
+                continue
+            sequence += ligne.strip()
+    return sequence
 
 class DynamicMatrix:    
     def __init__(self, lines, columns, gap):
@@ -133,6 +142,11 @@ class LowLevelMatrix(DynamicMatrix):
     
     def get_score(self, i, j):
         dist = self.distance[self.frozen["pos_id"], j]
+
+        # Cas du résidu bloqué avec sa propre position
+        if (dist == 0):
+            return 0
+        
         closest_dist = self.round_distance(dist)
 
         score = self.dope.loc[(self.dope['res1'] == self.aa_codes[self.frozen['seq_res']]) & 
@@ -144,65 +158,132 @@ class LowLevelMatrix(DynamicMatrix):
     def fill_matrix(self):
         # Partie supérieure gauche
         self.initialize_matrix(self.get_score(0, 0), [0, 0], 
-                               [self.frozen['seq_id'] - 1, self.frozen['pos_id'] - 1],
+                               [self.frozen['seq_id'], self.frozen['pos_id']],
                                self.get_score)
 
-        for i in range(1, self.frozen['seq_id']):
-            for j in range(1, self.frozen['pos_id']):
+        for i in range(1, self.frozen['seq_id'] + 1):
+            for j in range(1, self.frozen['pos_id'] + 1):
+                score = self.get_score(i, j)
+                self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
+                                                self.matrix[i - 1, j] + self.gap,
+                                                self.matrix[i, j - 1] + self.gap
+                                               )
+        # Partie inférieure droite
+        self.initialize_matrix(self.matrix[self.frozen['seq_id'], self.frozen['pos_id']],
+                               [self.frozen['seq_id'], self.frozen['pos_id']],
+                               [self.lines - 1, self.columns - 1],
+                               self.get_score)
+
+        for i in range(self.frozen['seq_id'] + 1, self.lines):
+            for j in range(self.frozen['pos_id'] + 1, self.columns):
                 score = self.get_score(i, j)
                 self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
                                                 self.matrix[i - 1, j] + self.gap,
                                                 self.matrix[i, j - 1] + self.gap
                                                )
 
-        # Case fixée
-        if (self.frozen['seq_id'] == 0):
-            self.matrix[self.frozen['seq_id'], self.frozen['pos_id']] = self.matrix[self.frozen['seq_id'], self.frozen['pos_id'] - 1]
-        elif (self.frozen['pos_id'] == 0):
-            self.matrix[self.frozen['seq_id'], self.frozen['pos_id']] = self.matrix[self.frozen['seq_id'] - 1, self.frozen['pos_id']]
-        else :
-            self.matrix[self.frozen['seq_id'], self.frozen['pos_id']] = self.matrix[self.frozen['seq_id'] - 1, self.frozen['pos_id'] - 1]
-
-        # Partie inférieure droite (si elle existe)
-        if (self.frozen['seq_id'] != self.lines - 1) and (self.frozen['pos_id'] != self.columns - 1):
-            self.initialize_matrix(self.matrix[self.frozen['seq_id'], self.frozen['pos_id']] +
-                                   self.get_score(self.frozen['seq_id'] + 1, self.frozen['pos_id'] + 1),
-                                   [self.frozen['seq_id'] + 1, self.frozen['pos_id'] + 1],
-                                   [self.lines - 1, self.columns - 1], self.get_score
-                                  )
-
-            if (self.frozen['seq_id'] != self.lines - 2) and (self.frozen['pos_id'] != self.columns - 2):
-                for i in range(self.frozen['seq_id'] + 2, self.lines):
-                    for j in range(self.frozen['pos_id'] + 2, self.columns):
-                        score = self.get_score(i, j)
-                        self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
-                                                        self.matrix[i - 1, j] + self.gap,
-                                                        self.matrix[i, j - 1] + self.gap
-                                                       )
-                        max_score = self.matrix[i, j]
-            else :
-                max_score = self.matrix[self.lines - 1, self.columns - 1]
-
-        else :
-            max_score = self.matrix[self.frozen['seq_id'], self.frozen['pos_id']]
-        
+        max_score = self.matrix[self.lines - 1, self.columns - 1]
         return max_score
 
+class HighLevelMatrix(DynamicMatrix):
+    def __init__(self, gap, query, template, dope):
+        distance = template.build_dist_matrix()
+        lines = len(query)
+        columns = len(distance)
+
+        DynamicMatrix.__init__(self, lines, columns, gap)
+
+        self.sequence = query
+        self.distance = distance
+        self.dope = dope
+
+        self.get_score_matrix()
+
+    def get_score_matrix(self):
+        self.score_matrix = np.zeros((self.lines, self.columns))
+        for i in range(self.lines):
+            for j in range(self.columns):
+                frozen = {'seq_id': i, 'pos_id': j}
+                low_level = LowLevelMatrix(self.gap, frozen, self.distance, self.dope, self.sequence)
+                self.score_matrix[i, j] =  low_level.fill_matrix()
+
+    def get_score(self, i, j):
+        score = self.score_matrix[i, j]
+        return score
+
+    def fill_matrix(self):
+        # Initialisation
+        self.initialize_matrix(self.get_score(0, 0), [0, 0], 
+                               [self.lines - 1, self.columns - 1],
+                               self.get_score)
+        
+        # Remplissage
+        for i in range(1, self.lines):
+            for j in range(1, self.columns):
+                score = self.get_score(i, j)
+                self.matrix[i, j] = score + min(self.matrix[i - 1, j - 1],
+                                                self.matrix[i - 1, j] + self.gap,
+                                                self.matrix[i, j - 1] + self.gap
+                                               )
+        max_score = self.matrix[self.lines - 1, self.columns - 1]
+
+        return max_score
+
+    def get_alignment(self):
+        structure_align = []
+        sequence_align = []
+        
+        i = self.lines - 1
+        j = self.columns - 1
+        while not ((i == 0) and (j == 0)):
+            print(i, j)
+            square = self.matrix[i, j]
+            score = self.score_matrix[i, j]
+            # Match
+            if (square == self.matrix[i - 1, j - 1] + score):
+                print("match")
+                structure_align.insert(0, j + 1)
+                sequence_align.insert(0, self.sequence[i])
+                i = i - 1
+                j = j - 1
+            # Gap
+            else:
+                if (square == self.matrix[i - 1, j] + score + self.gap):
+                    print("gap structure")
+                    structure_align.insert(0, '-')
+                    sequence_align.insert(0, self.sequence[i])
+                    i = i - 1
+                elif (square == self.matrix[i, j - 1] + score + self.gap):
+                    print("gap sequence")
+                    structure_align.insert(0, j + 1)
+                    sequence_align.insert(0, '-')
+                    j = j - 1
+
+        return ''.join(sequence_align), ''.join(str(x) for x in structure_align)
+
 if __name__ == "__main__":
-    # Matrice de distance
+    # Séquence 'query'
+    FASTA_FILE = "../data/5AWL.fasta"
+    QUERY = get_fasta_sequence(FASTA_FILE)
+
+    # Structure 'template'
     PDB_FILE = "../data/5awl.pdb"
     TEMPLATE = Template(PDB_FILE)
-    DIST_MATRIX = TEMPLATE.build_dist_matrix()
+    
+    # Matrice de distance
+    #DIST_MATRIX = TEMPLATE.build_dist_matrix()
     
     # Matrice DOPE
     DOPE_FILE = "../data/dope.par"
     DOPE_MATRIX = clean_DOPE_data(DOPE_FILE)
-    
-    FROZEN = {'seq_id': 5, 'pos_id': 5}
-    SEQUENCE = "YYDPETGTWY"
+
+    # Information(s) supplémentaire(s)
     GAP = 0
-    
-    LOW_TEST = LowLevelMatrix(GAP, FROZEN, DIST_MATRIX, DOPE_MATRIX, SEQUENCE)
-    MAX_SCORE = LOW_TEST.fill_matrix()
+
+    # Algorithme principal
+    HIGH_LEVEL = HighLevelMatrix(GAP, QUERY, TEMPLATE, DOPE_MATRIX)
+    MAX_SCORE = HIGH_LEVEL.fill_matrix()
     print(MAX_SCORE)
-    
+    ALIGN_SEQ, ALIGN_STRUCT = HIGH_LEVEL.get_alignment()
+    print(ALIGN_SEQ)
+    print(ALIGN_STRUCT)
