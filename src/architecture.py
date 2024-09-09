@@ -269,10 +269,7 @@ if __name__ == "__main__":
     # Structure 'template'
     PDB_FILE = "../data/5awl.pdb"
     TEMPLATE = Template(PDB_FILE)
-    
-    # Matrice de distance
-    #DIST_MATRIX = TEMPLATE.build_dist_matrix()
-    
+
     # Matrice DOPE
     DOPE_FILE = "../data/dope.par"
     DOPE_MATRIX = clean_DOPE_data(DOPE_FILE)
