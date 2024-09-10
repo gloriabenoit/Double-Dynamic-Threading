@@ -1,4 +1,4 @@
-name: projet_court
+name: ddt
 channels:
     - conda-forge
     - bioconda
@@ -6,4 +6,4 @@ channels:
 dependencies:
     - python
     - numpy
-    - pandas    
+    - pandas

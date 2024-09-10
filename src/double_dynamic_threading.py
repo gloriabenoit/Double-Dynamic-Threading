@@ -150,6 +150,10 @@ class Template:
                     z = float(ligne[46:54].strip())
 
                     list_calpha.append(AlphaCarbon(number, x, y, z))
+
+                # Conservation du premier modèle uniquement
+                if ligne.startswith("MODEL        2"):
+                    break
         return list_calpha
 
     def build_dist_matrix(self):
@@ -377,6 +381,10 @@ class LowLevelMatrix(DynamicMatrix):
         float
             Rounded distance.
         """
+        # Cas de la distance trop grande
+        if dist > 14.75:
+            return 14.75
+        
         # arrondi au quart le plus proche
         rounded_value = round(dist * 4) / 4
 
