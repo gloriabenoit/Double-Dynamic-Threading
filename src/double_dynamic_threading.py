@@ -6,6 +6,8 @@ Author :
 Date :
     2024-09-12
 """
+import sys
+from pathlib import Path
 from multiprocessing import Pool
 
 import pandas as pd
@@ -142,7 +144,7 @@ class Template:
         with open(filename, "r", encoding='UTF-8') as pdb:
             for ligne in pdb:
                 if ligne.startswith("ATOM") and (ligne[12:16].strip() == "CA"):
-                    number = ligne[6:11].strip()
+                    number = ligne[22:26].strip()
                     x = float(ligne[30:38].strip())
                     y = float(ligne[38:46].strip())
                     z = float(ligne[46:54].strip())
@@ -484,6 +486,8 @@ class HighLevelMatrix(DynamicMatrix):
     -------------------
     sequence : str
         Sequence to thread on template.
+    template : Template
+        Structural template.
     distance : numpy.ndarray
         2D array of float, representing the distance between
         all pairs of alpha carbon in template.
@@ -515,6 +519,8 @@ class HighLevelMatrix(DynamicMatrix):
         Compute high level matrix by dynamic programming.
     get_alignment()
         Find optimal alignement.
+    print_alignment(score, sequence_align, structure_align, max_char=50)
+        Displays an alignment.
     """
 
     def __init__(self, gap, query, template, dope):
@@ -549,6 +555,7 @@ class HighLevelMatrix(DynamicMatrix):
         DynamicMatrix.__init__(self, lines + 1, columns + 1, gap)
 
         self.sequence = query
+        self.template = template
         self.distance = distance
         self.dope = dope
 
@@ -674,9 +681,9 @@ class HighLevelMatrix(DynamicMatrix):
 
         Returns
         -------
-        str
+        list
             Aligned sequence.
-        str
+        list
             Aligned structure.
         """
         structure_align = []
@@ -685,32 +692,73 @@ class HighLevelMatrix(DynamicMatrix):
         i = self.lines - 1
         j = self.columns - 1
         while not ((i == 0) and (j == 0)):
-            print(i, j)
             square = self.matrix[i, j]
             score = self.score_matrix[i - 1, j - 1]
+
+            pos_nb = self.template.structure[j - 1].number
+
             # Match
             if square == self.matrix[i - 1, j - 1] + score:
-                print("match")
-                structure_align.insert(0, j)
+                structure_align.insert(0, pos_nb)
                 sequence_align.insert(0, self.sequence[i - 1])
                 i = i - 1
                 j = j - 1
             # Gap
             else:
                 if square == self.matrix[i - 1, j] + self.gap:
-                    print("gap structure")
                     structure_align.insert(0, "-")
                     sequence_align.insert(0, self.sequence[i - 1])
                     i = i - 1
                 elif square == self.matrix[i, j - 1] + self.gap:
-                    print("gap sequence")
-                    structure_align.insert(0, j)
+                    structure_align.insert(0, pos_nb)
                     sequence_align.insert(0, "-")
                     j = j - 1
 
-        return "".join(sequence_align), "".join(
-            str(x) for x in structure_align
-        )
+        return sequence_align, structure_align
+
+    def print_alignment(self, score, sequence_align,
+                        structure_align, max_char=50
+                        ):
+        """
+        Display an alignment.
+
+        Parameters
+        ----------
+        score : float
+            Score of alignment.
+        sequence_align : list
+            Aligned sequence.
+        structure_align : list
+            Aligned structure.
+        max_char : int
+            Max characters to show in one line.
+            Default is 50.
+        """
+        # Mise en forme du résultat
+        f_seq_align = ""
+        f_struct_align = ""
+        for index, value in enumerate(sequence_align):
+            max_len = len(str(structure_align[index]))
+            f_seq_align += f"{value:^{max_len}} "
+            f_struct_align += f"{structure_align[index]} "
+
+        # Affichage
+        print(f"Optimized alignment, score= {score:.2f}:")
+        i = 0
+        while i < min(len(f_struct_align), len(f_seq_align)):
+            j = i + max_char
+            while (j < min(len(f_struct_align), len(f_seq_align))
+                   and (f_struct_align[j] != ' ' or f_seq_align[j] != ' ')
+                   ):
+                j += 1
+            if j < min(len(f_struct_align), len(f_seq_align)):
+                j = j + 1
+
+            print(f_struct_align[i:j])
+            print(f_seq_align[i:j])
+            if len(f_struct_align) > max_char:
+                print()  # Ligne vide pour espacer les alignements
+            i = j
 
 
 def clean_dope_data(filename):
@@ -774,25 +822,53 @@ def get_fasta_sequence(filename):
 
 
 if __name__ == "__main__":
-    # Séquence 'query'
-    FASTA_FILE = "../data/5AWL.fasta"
-    QUERY = get_fasta_sequence(FASTA_FILE)
-
-    # Structure 'template'
-    PDB_FILE = "../data/5awl.pdb"
-    TEMPLATE = Template(PDB_FILE)
-
-    # Matrice DOPE
+    # Informations générales
+    GAP = 0
     DOPE_FILE = "../data/dope.par"
+    if not Path(DOPE_FILE).exists():
+        sys.exit("dope.par missing. DOPE potentials cannot be retrieved.")
     DOPE_MATRIX = clean_dope_data(DOPE_FILE)
 
-    # Information(s) supplémentaire(s)
-    GAP = 0
+    # Récupération des arguments
+    if len(sys.argv) < 3:
+        sys.exit("Missing arguments: Template and/or Query")
 
-    # Algorithme principal
-    HIGH_LEVEL = HighLevelMatrix(GAP, QUERY, TEMPLATE, DOPE_MATRIX)
-    MAX_SCORE = HIGH_LEVEL.fill_matrix()
-    print(MAX_SCORE)
-    ALIGN_SEQ, ALIGN_STRUCT = HIGH_LEVEL.get_alignment()
-    print(ALIGN_SEQ)
-    print(ALIGN_STRUCT)
+    # Vérification du template
+    PDB_FILE = sys.argv[1]
+    if PDB_FILE.split('.')[-1] != 'pdb':
+        sys.exit("Wrong argument: Template is not a PDB file.")
+    elif not Path(PDB_FILE).exists():
+        sys.exit("Wrong argument: Template does not exist.")
+
+    TEMPLATE = Template(PDB_FILE)
+
+    # Construction du stockage des résultats
+    RESULTS = []
+
+    # Vérification des query
+    for FASTA_FILE in sys.argv[2:]:
+        if FASTA_FILE.split('.')[-1] != 'fasta':
+            sys.exit("Wrong argument: Query is not a fasta file.")
+        elif not Path(FASTA_FILE).exists():
+            sys.exit("Wrong argument: Query does not exist.")
+
+        QUERY = get_fasta_sequence(FASTA_FILE)
+
+        # Algorithme principal
+        HIGH_LEVEL = HighLevelMatrix(GAP, QUERY, TEMPLATE, DOPE_MATRIX)
+        MAX_SCORE = HIGH_LEVEL.fill_matrix()
+        ALIGN_SEQ, ALIGN_STRUCT = HIGH_LEVEL.get_alignment()
+        HIGH_LEVEL.print_alignment(MAX_SCORE, ALIGN_SEQ, ALIGN_STRUCT)
+
+        # Stockage des résultats
+        RESULTS.append([FASTA_FILE, MAX_SCORE, ALIGN_STRUCT, ALIGN_SEQ])
+
+    RESULTS = pd.DataFrame(RESULTS, columns=['QUERY', 'MAX_SCORE',
+                                             'ALIGN_SEQ', 'ALIGN_STRUCT'])
+
+    # Organiser selon le score croissant
+    RESULTS = RESULTS.sort_values(by='MAX_SCORE', ascending=True)
+
+    # Sauvegarde des résultats
+    TEMPLATE_NAME = PDB_FILE.split('.')[-2].split('/')[-1]
+    RESULTS.to_csv(f"../results/ddt_{TEMPLATE_NAME}.csv", sep=';', index=False)
