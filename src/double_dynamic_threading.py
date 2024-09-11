@@ -699,11 +699,23 @@ class HighLevelMatrix(DynamicMatrix):
 
         i = self.lines - 1
         j = self.columns - 1
-        while not ((i == 0) and (j == 0)):
+        while (i, j) != (0, 0):
+            pos_nb = self.template.structure[j - 1].number
+
+            # Bordures de matrice
+            if (i == 0):
+                structure_align.insert(0, pos_nb)
+                sequence_align.insert(0, "-")
+                j = j - 1
+                continue
+            if (j == 0):
+                structure_align.insert(0, "-")
+                sequence_align.insert(0, self.sequence[i - 1])
+                i = i - 1
+                continue
+
             square = self.matrix[i, j]
             score = self.score_matrix[i - 1, j - 1]
-
-            pos_nb = self.template.structure[j - 1].number
 
             # Match
             if square == self.matrix[i - 1, j - 1] + score:
@@ -832,7 +844,7 @@ def get_fasta_sequence(filename):
 if __name__ == "__main__":
     # Informations générales
     GAP = 0
-    DOPE_FILE = "../data/dope.par"
+    DOPE_FILE = "data/dope.par"
     if not Path(DOPE_FILE).exists():
         sys.exit("dope.par missing. DOPE potentials cannot be retrieved.")
     DOPE_MATRIX = clean_dope_data(DOPE_FILE)
@@ -849,6 +861,9 @@ if __name__ == "__main__":
         sys.exit("Wrong argument: Template does not exist.")
 
     TEMPLATE = Template(PDB_FILE)
+    TEMPLATE_NAME = PDB_FILE.split('.')[-2].split('/')[-1].upper()
+    print(f"Template: {TEMPLATE_NAME}")
+    
 
     # Construction du stockage des résultats
     RESULTS = []
@@ -861,6 +876,8 @@ if __name__ == "__main__":
             sys.exit("Wrong argument: Query does not exist.")
 
         QUERY = get_fasta_sequence(FASTA_FILE)
+        FASTA_NAME = FASTA_FILE.split('.')[-2].split('/')[-1].upper()
+        print(f"Query: {FASTA_NAME}")
 
         # Algorithme principal
         HIGH_LEVEL = HighLevelMatrix(GAP, QUERY, TEMPLATE, DOPE_MATRIX)
@@ -878,5 +895,4 @@ if __name__ == "__main__":
     RESULTS = RESULTS.sort_values(by='MAX_SCORE', ascending=True)
 
     # Sauvegarde des résultats
-    TEMPLATE_NAME = PDB_FILE.split('.')[-2].split('/')[-1]
-    RESULTS.to_csv(f"../results/ddt_{TEMPLATE_NAME}.csv", sep=';', index=False)
+    RESULTS.to_csv(f"results/ddt_{TEMPLATE_NAME}.csv", sep=';', index=False)
