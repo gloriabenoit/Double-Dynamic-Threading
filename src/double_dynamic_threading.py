@@ -876,7 +876,8 @@ if __name__ == "__main__":
             sys.exit("Wrong argument: Query does not exist.")
 
         QUERY = get_fasta_sequence(FASTA_FILE)
-        FASTA_NAME = FASTA_FILE.split('.')[-2].split('/')[-1].upper()
+        FASTA_NAME = FASTA_FILE.split('.')[-2].split('/')[-1]
+        FASTA_NAME = FASTA_NAME.split('_')[-1].upper()
         print(f"Query: {FASTA_NAME}")
 
         # Algorithme principal
@@ -886,7 +887,7 @@ if __name__ == "__main__":
         HIGH_LEVEL.print_alignment(MAX_SCORE, ALIGN_SEQ, ALIGN_STRUCT)
 
         # Stockage des résultats
-        RESULTS.append([FASTA_FILE, MAX_SCORE, ALIGN_STRUCT, ALIGN_SEQ])
+        RESULTS.append([FASTA_NAME, MAX_SCORE, ALIGN_STRUCT, ALIGN_SEQ])
 
     RESULTS = pd.DataFrame(RESULTS, columns=['QUERY', 'MAX_SCORE',
                                              'ALIGN_SEQ', 'ALIGN_STRUCT'])
