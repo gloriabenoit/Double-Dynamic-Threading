@@ -384,7 +384,7 @@ class LowLevelMatrix(DynamicMatrix):
         # Cas de la distance trop grande
         if dist > 14.75:
             return 14.75
-        
+
         # arrondi au quart le plus proche
         rounded_value = round(dist * 4) / 4
 
@@ -703,12 +703,12 @@ class HighLevelMatrix(DynamicMatrix):
             pos_nb = self.template.structure[j - 1].number
 
             # Bordures de matrice
-            if (i == 0):
+            if i == 0:
                 structure_align.insert(0, pos_nb)
                 sequence_align.insert(0, "-")
                 j = j - 1
                 continue
-            if (j == 0):
+            if j == 0:
                 structure_align.insert(0, "-")
                 sequence_align.insert(0, self.sequence[i - 1])
                 i = i - 1
@@ -863,7 +863,6 @@ if __name__ == "__main__":
     TEMPLATE = Template(PDB_FILE)
     TEMPLATE_NAME = PDB_FILE.split('.')[-2].split('/')[-1].upper()
     print(f"Template: {TEMPLATE_NAME}")
-    
 
     # Construction du stockage des résultats
     RESULTS = []
