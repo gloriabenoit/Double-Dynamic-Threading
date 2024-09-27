@@ -1,4 +1,5 @@
-# Protein sequence threading by double dynamic programming (M2BI)
+# Protein sequence threading by double dynamic programming
+September 2024 (M2 BI)
 
 ## Introduction
 This project aims to reimplement the method described by David Jones in 'THREADER: protein sequence threading
